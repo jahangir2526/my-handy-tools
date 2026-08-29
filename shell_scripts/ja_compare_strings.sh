@@ -1,5 +1,6 @@
-#!/bin/bash
-# Author: Jahangir Alam (jahangir2526@gmail.com)
+#!/usr/bin/env bash
+# Author: S M Jahangir Alam <jahangir2526@gmail.com>
+# Last updated: 2026-08-29 13:26:57 +08
 # ./<name>.sh "<string1>" "<string2>"
 
 VAR1="$1"

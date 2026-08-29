@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 #
+# Author: S M Jahangir Alam <jahangir2526@gmail.com>
+# Last updated: 2026-08-29 13:26:57 +08
+#
 # jqpick.sh - interactively select and print a value from JSON on macOS.
 #
 # Usage:

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Check an MCP HTTP endpoint and list its advertised capabilities.
+# Author: S M Jahangir Alam <jahangir2526@gmail.com>
+# Last updated: 2026-08-29 13:26:57 +08
 
 set -euo pipefail
 
