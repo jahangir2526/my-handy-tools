@@ -121,3 +121,6 @@ case "$LIST_TYPE" in
     exit 1
     ;;
 esac
+echo
+echo "************* Cheers! All done. *************"
+echo
