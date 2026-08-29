@@ -1,126 +1,131 @@
 #!/usr/bin/env bash
+# Check an MCP HTTP endpoint and list its advertised capabilities.
 
 set -euo pipefail
 
-if [ $# -ne 2 ]; then
-    echo "==============================================="
-    echo "Usage: $0 <mcp-http-url> <tl|rl|pl|all>"
-    echo "==============================================="
-    echo "  tl  -> tools/list"
-    echo "  pl  -> prompts/list"
-    echo "  rtl -> resources/templates/list"
-    echo "  rl  -> resources/list"
-    echo "  all -> runs for all tools, prompts and resources templates and resources" 
-    echo "==============================================="
-    echo "Example:"
-    echo "  $0 http://localhost:8000/mcp tl"
-    echo "  $0 http://localhost:8000/mcp all"
-    echo "==============================================="
-    exit 1
+protocol_version="2025-03-26"
+
+usage() {
+  cat <<EOF
+Usage: ${0##*/} <mcp-http-url> <check|tl|pl|rtl|rl|all>
+
+  check  initialize the server and report its identity and capabilities
+  tl     list tools
+  pl     list prompts
+  rtl    list resource templates
+  rl     list resources
+  all    list every capability advertised by the server
+
+Example:
+  ${0##*/} https://gateway.mcpservers.org/yahoo-finance/mcp check
+  ${0##*/} https://gateway.mcpservers.org/yahoo-finance/mcp all
+EOF
+}
+
+if [[ $# -ne 2 ]]; then
+  usage >&2
+  exit 2
 fi
 
-URL="$1"
-LIST_TYPE="$2"
+for command in curl jq; do
+  command -v "$command" >/dev/null || {
+    printf 'Required command not found: %s\n' "$command" >&2
+    exit 127
+  }
+done
 
-echo
-echo "Initializing MCP session..."
-echo 
+url=$1
+action=$2
+case "$action" in check|tl|pl|rtl|rl|all) ;; *) usage >&2; exit 2 ;; esac
 
-INIT_RESPONSE=$(curl -si -X POST "$URL" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{
-    "jsonrpc":"2.0",
-    "id":1,
-    "method":"initialize",
-    "params":{
-      "protocolVersion":"2025-03-26",
-      "capabilities":{},
-      "clientInfo":{
-        "name":"curl",
-        "version":"1.0"
-      }
-    }
-  }')
+headers_file=$(mktemp)
+trap 'rm -f "$headers_file"' EXIT
 
-SESSION=$(echo "$INIT_RESPONSE" | awk '/^mcp-session-id:/ {print $2}' | tr -d '\r')
+# MCP responses may be JSON or Server-Sent Events. Extract JSON from either.
+mcp_json() {
+  local response
+  response=$(cat)
+  if [[ "$response" == *"data: "* ]]; then
+    printf '%s\n' "$response" | sed -n 's/^data: //p'
+  else
+    printf '%s\n' "$response"
+  fi
+}
 
-if [ -z "$SESSION" ]; then
-    echo "Failed to obtain Mcp-Session-Id"
-    echo
-    echo "$INIT_RESPONSE"
-    exit 1
+initialize_response=$(curl --silent --show-error --fail-with-body \
+  --dump-header "$headers_file" \
+  --request POST "$url" \
+  --header 'Content-Type: application/json' \
+  --header 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ja-mcp-curl","version":"1.0"}}}')
+
+initialize_json=$(printf '%s\n' "$initialize_response" | mcp_json)
+if ! printf '%s\n' "$initialize_json" | jq -e '.result' >/dev/null; then
+  printf 'MCP initialization failed:\n%s\n' "$initialize_json" >&2
+  exit 1
 fi
 
-echo "Session: $SESSION"
-echo
+protocol_version=$(printf '%s\n' "$initialize_json" | jq -r '.result.protocolVersion // "2025-03-26"')
+session=$(awk 'BEGIN { IGNORECASE=1 } /^mcp-session-id:/ { print $2 }' "$headers_file" | tr -d '\r')
 
-curl -s -X POST "$URL" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{
-    "jsonrpc":"2.0",
-    "method":"notifications/initialized"
-  }' >/dev/null
+server_name=$(printf '%s\n' "$initialize_json" | jq -r '.result.serverInfo.name // "unknown"')
+server_version=$(printf '%s\n' "$initialize_json" | jq -r '.result.serverInfo.version // "unknown"')
+printf 'MCP server: %s (version %s)\nProtocol: %s\n' "$server_name" "$server_version" "$protocol_version"
+[[ -n "$session" ]] && printf 'Session: %s\n' "$session" || printf 'Session: stateless (no Mcp-Session-Id supplied)\n'
 
-call() {
-  local id=$1
-  local method=$2
-  local filter=$3
+mcp_post() {
+  local id=$1 method=$2
+  local -a headers=(
+    --header 'Content-Type: application/json'
+    --header 'Accept: application/json, text/event-stream'
+    --header "MCP-Protocol-Version: $protocol_version"
+  )
+  [[ -n "$session" ]] && headers+=(--header "Mcp-Session-Id: $session")
 
-  echo
-  echo "=== Available $method ==="
-
-  curl -s -X POST "$URL" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json, text/event-stream" \
-    -H "Mcp-Session-Id: $SESSION" \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\"}" | jq ".result.$filter[] | {name, description}"
+  curl --silent --show-error --fail-with-body --request POST "$url" "${headers[@]}" \
+    --data "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":{}}"
 }
 
-list_tools() {
-  call 2 tools/list tools
+list() {
+  local id=$1 method=$2 result_key=$3
+  local response json
+  response=$(mcp_post "$id" "$method")
+  json=$(printf '%s\n' "$response" | mcp_json)
+  if ! printf '%s\n' "$json" | jq -e '.result' >/dev/null; then
+    printf '\n%s is unavailable:\n%s\n' "$method" "$json" >&2
+    return 1
+  fi
+  printf '\n=== %s ===\n' "$method"
+  printf '%s\n' "$json" | jq ".result.$result_key[]? | {name, description}"
 }
 
-list_prompts() {
-  call 3 prompts/list prompts
+has_capability() {
+  local capability=$1
+  printf '%s\n' "$initialize_json" | jq -e ".result.capabilities.$capability != null" >/dev/null
 }
 
-list_resources_templates() {
-  call 4 resources/templates/list resourceTemplates
+list_if_advertised() {
+  local capability=$1 id=$2 method=$3 result_key=$4
+  if has_capability "$capability"; then
+    list "$id" "$method" "$result_key"
+  else
+    printf '\n=== %s ===\nNot advertised by this server.\n' "$method"
+  fi
 }
 
-list_resources() {
-  call 5 resources/list resources
-}
-
-
-case "$LIST_TYPE" in
-  tl)
-    list_tools
+case "$action" in
+  check)
+    printf 'Capabilities: '
+    printf '%s\n' "$initialize_json" | jq -r '[.result.capabilities | keys[]] | join(", ")'
     ;;
-  rl)
-    list_prompts
-    ;;
-  rtl)
-    list_resources_templates
-    ;;
-  pl)
-    list_resources
-    ;;
+  tl) list_if_advertised tools 2 tools/list tools ;;
+  pl) list_if_advertised prompts 3 prompts/list prompts ;;
+  rtl) list_if_advertised resources 4 resources/templates/list resourceTemplates ;;
+  rl) list_if_advertised resources 5 resources/list resources ;;
   all)
-    list_tools
-    list_prompts
-    list_resources_templates
-    list_resources
-    ;;
-  *)
-    echo "Invalid list type: $LIST_TYPE"
-    echo "Expected one of: tl, pl, rtl, rl, all"
-    exit 1
+    list_if_advertised tools 2 tools/list tools
+    list_if_advertised prompts 3 prompts/list prompts
+    list_if_advertised resources 4 resources/templates/list resourceTemplates
+    list_if_advertised resources 5 resources/list resources
     ;;
 esac
-echo
-echo "************* Cheers! All done. *************"
-echo
