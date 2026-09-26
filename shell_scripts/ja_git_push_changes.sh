@@ -8,6 +8,24 @@ then
 	exit;
 fi
 
+if [ -z "$2" ]
+then
+	echo "Branch name is empty";
+	exit;
+fi
+
+branch_name="$2"
+
+if [ "$branch_name" = "main" ]
+then
+	confirmation=$(osascript -e 'display dialog "This will update the main branch. Do you want to continue?" buttons {"No", "Yes"} default button "No" with icon caution' 2>/dev/null)
+	if [ "$confirmation" != "button returned:Yes" ]
+	then
+		echo "Push to main cancelled.";
+		exit;
+	fi
+fi
+
 git add .
 git commit -m "$1"
-git pull && git push origin main 
+git pull origin "$branch_name" && git push origin "$branch_name"
