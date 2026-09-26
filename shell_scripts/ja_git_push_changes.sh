@@ -5,12 +5,14 @@
 if [ -z "$1" ]
 then
 	echo "Commit message is empty";
+	echo "Example: $0 \"Describe the changes\" \"feature/my-branch\"";
 	exit;
 fi
 
 if [ -z "$2" ]
 then
 	echo "Branch name is empty";
+	echo "Example: $0 \"Describe the changes\" \"feature/my-branch\"";
 	exit;
 fi
 
