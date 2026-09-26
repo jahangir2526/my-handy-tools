@@ -8,4 +8,6 @@ then
 	exit;
 fi
 
-echo "$(cd "$(dirname "$1")"; pwd)/$(basename "$1")"
+path="$(cd "$(dirname "$1")"; pwd)/$(basename "$1")"
+echo "$path"
+printf '%s' "$path" | pbcopy
