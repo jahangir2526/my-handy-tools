@@ -153,5 +153,7 @@ Example JSON workflow:
 
 Text documents, editor preferences, and the selected workspace are stored in
 the browser's local storage. Core processing happens locally in the browser.
+The workbench's light-bordered panels and controls use the same teal outline
+as the Generator cards.
 The QR-code generator loads its QR library from cdnjs, so that feature needs
 network access when the library is not already cached.
