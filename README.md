@@ -22,6 +22,22 @@ shell_scripts/ja_compare_strings.sh "hello" "world"
 
 Quote values containing spaces or shell-special characters.
 
+## `ja_docker.sh`
+
+Collects the region key, tenancy namespace, identity domain, username, local
+image name and tag, OCIR repository, and OCIR tag, then displays the entered values and
+prints ready-to-copy `docker login`, `docker tag`, and `docker push` commands.
+The tag command uses the local image with tag as its source. Commands are only
+printed, not executed. Press Enter to accept the displayed defaults for region,
+namespace, identity domain, and username. Local image name and tag are required;
+blank inputs for these are requested again. The OCIR repository defaults to the
+local image name prefixed with `repo-`, and its tag defaults to the local image
+tag. Press Enter to accept these defaults or enter different values.
+
+```bash
+shell_scripts/ja_docker.sh
+```
+
 ## `ja_git_push_changes.sh`
 
 Stages all current changes, creates a commit, pulls the selected remote branch,
